@@ -1,0 +1,31 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+.env
+
+# Local data & service volumes
+qdrant_storage/
+es_data/
+neo4j_data/
+data/raw/*
+!data/raw/.gitkeep
+data/corpus/*
+!data/corpus/.gitkeep
+.idea/
+.ruff_cache/
+docker/milvus/
+results/
+
+
+# Other
+.cursor/
+docs/

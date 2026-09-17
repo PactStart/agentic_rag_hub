@@ -1,0 +1,9 @@
+{"id": "g1", "query": "试用期几个月", "roles": ["employee"], "expect": "answer", "must_include": ["3"], "allowed_sources": ["handbook.md"]}
+{"id": "g2", "query": "办公网 Wi-Fi 怎么申请", "roles": ["employee"], "expect": "answer", "must_include": ["SSID"], "allowed_sources": ["public_faq.md"]}
+{"id": "g3", "query": "一线城市午餐补贴多少", "roles": ["finance"], "expect": "answer", "must_include": ["80"], "allowed_sources": ["finance_reimburse.md"]}
+{"id": "g4", "query": "一线城市午餐补贴多少", "roles": ["employee"], "expect": "forbidden", "allowed_sources": []}
+{"id": "g5", "query": "P6 年薪带宽是多少", "roles": ["hr"], "expect": "answer", "must_include": ["40"], "allowed_sources": ["hr_confidential.md"]}
+{"id": "g6", "query": "P6 年薪带宽是多少", "roles": ["employee"], "expect": "forbidden", "allowed_sources": []}
+{"id": "g7", "query": "火星殖民地的年假怎么休", "roles": ["employee"], "expect": "refuse", "allowed_sources": []}
+{"id": "g8", "query": "财务部负责什么", "roles": ["finance"], "expect": "answer", "must_include": ["报销"], "allowed_sources": ["finance_reimburse.md", "handbook.md"]}
+{"id": "g9", "query": "人事部负责什么", "roles": ["hr"], "expect": "answer", "must_include": ["薪酬"], "allowed_sources": ["hr_confidential.md", "handbook.md"]}

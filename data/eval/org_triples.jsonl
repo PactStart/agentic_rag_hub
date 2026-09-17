@@ -1,0 +1,10 @@
+{"h": "人事部", "rel": "负责", "t": "薪酬带宽", "source": "hr_confidential.md", "acl": ["hr"]}
+{"h": "人事部", "rel": "负责", "t": "员工手册", "source": "handbook.md", "acl": ["all"]}
+{"h": "财务部", "rel": "负责", "t": "报销制度", "source": "finance_reimburse.md", "acl": ["finance"]}
+{"h": "员工", "rel": "遵守", "t": "员工手册", "source": "handbook.md", "acl": ["all"]}
+{"h": "员工", "rel": "可申请", "t": "办公网 Wi-Fi", "source": "public_faq.md", "acl": ["all"]}
+{"h": "试用期", "rel": "属于", "t": "员工手册", "source": "handbook.md", "acl": ["all"]}
+{"h": "一线城市午餐补贴", "rel": "规定于", "t": "报销制度", "source": "finance_reimburse.md", "acl": ["finance"]}
+{"h": "P6 年薪带宽", "rel": "规定于", "t": "薪酬带宽", "source": "hr_confidential.md", "acl": ["hr"]}
+{"h": "人事部", "rel": "隶属", "t": "公司", "source": "handbook.md", "acl": ["all"]}
+{"h": "财务部", "rel": "隶属", "t": "公司", "source": "handbook.md", "acl": ["all"]}

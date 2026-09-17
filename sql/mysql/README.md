@@ -1,0 +1,4 @@
+-- DDL 已改由 Alembic 管理，勿在此手工建表。
+-- uv run python scripts/init_mysql.py
+-- 迁移：alembic/versions/20260316_0001_kb_ledger.py
+-- 模型：src/ledger/models.py

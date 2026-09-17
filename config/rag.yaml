@@ -1,0 +1,103 @@
+# 引擎选型。连接串在 .env，不要把 Key 写进本文件。
+
+# 入库：数据源与解析路由分离（语料从哪来 ≠ 怎么解析）
+ingest:
+  source:
+    type: local_glob             # 目前仅 local_glob；企业可扩展 s3 / api
+    glob: data/sandbox/**/*.md   # 也可写 globs: [a/**/*.md, b/**/*.txt]
+  routing:
+    - match: {ext: [md, markdown]}
+      parser: markdown
+      chunker: markdown_heading
+    - match: {ext: [pdf]}
+      parser: docling            # 尚未实现；遇到 pdf 会记失败并跳过
+      chunker: markdown_heading  # PDF 落地后可改 pdf_layout
+  default:
+    parser: markdown
+    chunker: markdown_heading
+
+# 各解析器参数
+parser:
+  markdown: {}
+  docling:
+    ocr: false
+  llamaparse:
+    api_key: ${LLAMA_CLOUD_API_KEY}
+    result_type: markdown
+  unstructured:
+    strategy: hi_res
+    api_url: ${UNSTRUCTURED_API_URL}
+
+# 切片策略参数（由 routing.*.chunker / default.chunker / chunking.backend 选用）
+chunking:
+  backend: markdown_heading      # markdown_heading | pdf_layout | table_row | faq_pair
+  markdown_heading:
+    chunk_size: 512
+    chunk_overlap: 64
+
+sparse:
+  backend: elasticsearch          # memory_jsonl | elasticsearch | postgres_fts | qdrant_sparse
+  memory_jsonl:
+    path: data/corpus/chunks.jsonl
+  elasticsearch:
+    url: ${ELASTICSEARCH_URL}
+    index: rag_chunks
+  postgres_fts:
+    dsn: ${POSTGRES_DSN}
+    table: rag_chunks
+
+vector:
+  backend: milvus                # qdrant | milvus | pgvector
+  qdrant:
+    url: ${QDRANT_URL}
+    collection: ${QDRANT_COLLECTION}
+    api_key: ${QDRANT_API_KEY}
+  milvus:
+    uri: ${MILVUS_URI}
+    collection: enterprise_rag
+    token: ${MILVUS_TOKEN}       # 本地 standalone 可空
+  pgvector:
+    dsn: ${POSTGRES_DSN}
+    table: rag_embeddings
+
+embed_dim: 1024
+
+# 入库账本（企业用 MySQL；沙盒可改 json）
+ledger:
+  backend: mysql                 # mysql | json
+  tenant_id: default
+  mysql:
+    dsn: ${MYSQL_DSN}
+  json:
+    path: data/corpus/ingest_manifest.json
+
+acl:
+  default: ["all"]
+
+# 召回过滤：两路各自的原始分，不要拿来比、也不要对 RRF 设阈值。
+# 未填的键 = 该条件关闭。keep_at_least>0 时滤完太少会按原分补回。
+retrieve:
+  recall_k: 10
+  top_k: 5
+  rrf_k: 60
+  sparse_score:                 # BM25 / ES _score，无上界
+    gt: 0                       # 丢掉完全没对上词的 0 分
+    gte: null
+    lt: null
+    lte: null
+    relative_gte: null          # 例 0.2 → 保留 >= 本路最高分*0.2
+    keep_at_least: 0            # 是滤完之后的保底条数：按阈值砍完如果太少，就从原列表里按分数从高到低再补回来，直到凑够这么多条
+  vector_score:                 # Qdrant 余弦约 0～1；换模型要重标定
+    gt: null
+    gte: null                   # 生产可试 0.35；沙盒库小先关掉
+    lt: null
+    lte: null
+    relative_gte: 0.5          # 例 0.5 → 丢掉远低于本路第一名的
+    keep_at_least: 0
+  rerank_score:                 # 硅基 bge-reranker，约 0～1；主阈值建议放这里
+    gt: null
+    gte: 0.2                   # 例 0.2；用黄金集扫，不要抄网上的 0.7
+    lt: null
+    lte: null
+    relative_gte: null
+    keep_at_least: 0
