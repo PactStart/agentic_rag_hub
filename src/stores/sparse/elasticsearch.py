@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from elasticsearch import Elasticsearch, BadRequestError
 from elasticsearch.helpers import bulk
+from loguru import logger
 
 from src.stores.protocol import Chunk, Hit
 
@@ -55,15 +56,17 @@ class ElasticBm25Index:
                 index=self.index,
                 mappings=_text_mapping("ik_max_word"),
             )
-            print("   ES 索引已建（analyzer=ik_max_word）")
+            logger.info("ES 索引已建（analyzer=ik_max_word）")
         except BadRequestError:
             self.client.indices.create(
                 index=self.index,
                 mappings=_text_mapping("standard"),
             )
-            print("   ES 无 IK 插件，回退 standard（中文召回会变差，请用 docker/elasticsearch 镜像）")
+            logger.warning(
+                "ES 无 IK 插件，回退 standard（中文召回会变差，请用 docker/elasticsearch 镜像）"
+            )
 
-    def upsert(self, chunks: list[Chunk]) -> None:
+    def upsert(self, chunks: list[Chunk], *, refresh: bool | str = False) -> None:
         if not chunks:
             return
         actions = [
@@ -83,15 +86,36 @@ class ElasticBm25Index:
             }
             for chunk in chunks
         ]
-        bulk(self.client, actions, refresh="wait_for")
+        # 入库默认不 wait_for，整波写完再 refresh_index()
+        bulk(
+            self.client,
+            actions,
+            chunk_size=2000,
+            request_timeout=120,
+            refresh=refresh,
+        )
+
+    def refresh_index(self) -> None:
+        self.client.indices.refresh(index=self.index)
 
     def delete_by_source(self, source: str) -> None:
-        self.client.delete_by_query(
-            index=self.index,
-            query={"term": {"source": source}},
-            refresh=True,
-            conflicts="proceed",
-        )
+        self.delete_by_sources([source])
+
+    def delete_by_sources(self, sources: list[str], *, refresh: bool = False) -> None:
+        cleaned = [s for s in sources if s]
+        if not cleaned:
+            return
+        # terms 单次不宜过大；分片删除
+        step = 500
+        for i in range(0, len(cleaned), step):
+            part = cleaned[i : i + step]
+            self.client.delete_by_query(
+                index=self.index,
+                query={"terms": {"source": part}},
+                refresh=refresh,
+                conflicts="proceed",
+                request_timeout=120,
+            )
 
     def search(self, query: str, roles: list[str], top_k: int) -> list[Hit]:
         body_query = {

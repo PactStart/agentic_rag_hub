@@ -17,6 +17,8 @@ from src.ledger.db import (
     normalize_mysql_dsn,
     server_dsn_without_database,
 )
+from src.logging_config import setup_logging
+from loguru import logger
 from sqlalchemy import create_engine, text
 
 VERSIONS_DIR = ROOT / "alembic" / "versions"
@@ -40,12 +42,13 @@ def ensure_database(dsn: str) -> None:
         )
         conn.commit()
     engine.dispose()
-    print(f"库已就绪：{db_name}")
+    logger.info("库已就绪：{}", db_name)
 
 
 def main() -> None:
+    setup_logging()
     dsn = _dsn()
-    print(f"目标：{normalize_mysql_dsn(dsn).split('@')[-1]}")
+    logger.info("目标：{}", normalize_mysql_dsn(dsn).split("@")[-1])
 
     if not any(VERSIONS_DIR.glob("*.py")):
         raise SystemExit(
@@ -55,9 +58,9 @@ def main() -> None:
 
     ensure_database(dsn)
     cmd = [sys.executable, "-m", "alembic", "upgrade", "head"]
-    print("执行：", " ".join(cmd))
+    logger.info("执行：{}", " ".join(cmd))
     subprocess.check_call(cmd, cwd=ROOT)
-    print("完成。可执行：uv run python scripts/ingest.py")
+    logger.info("完成。可执行：uv run python scripts/ingest.py")
 
 
 if __name__ == "__main__":

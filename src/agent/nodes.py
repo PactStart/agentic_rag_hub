@@ -1,3 +1,5 @@
+from loguru import logger
+
 from src.agent.state import RAGState
 from src.llm.generate import generate
 from src.pipeline_graph.query import graph_retrieve, should_use_graph
@@ -22,7 +24,7 @@ def retrieve_node(state: RAGState) -> dict:
             graph_hits = graph_retrieve(query, roles=roles, top_k=5)
             hits = graph_hits + hits
         except Exception as exc:
-            print(f"图谱检索跳过（{exc.__class__.__name__}）")
+            logger.warning("图谱检索跳过（{}）", exc.__class__.__name__)
     return {"hits": hits[:8]}
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import httpx
@@ -12,9 +13,10 @@ from src.llm.rate_limit import RateBudget, with_retry
 
 EMBED_DIM = 1024
 QUERY_PREFIX = "为这个句子生成表示以用于检索相关文章："
-_BATCH = 32
+# 单请求条数：过大易超时/413；过小浪费往返。64 对 BGE-M3 较稳。
+_DEFAULT_BATCH = 64
+_DEFAULT_WORKERS = 4
 
-# 默认配额按硅基控制台常见档位；不同模型/接口请改传参或覆盖常量
 _DEFAULT_EMBED = RateBudget("siliconflow:embed:BAAI/bge-m3", rpm=2000, tpm=500_000)
 _DEFAULT_RERANK = RateBudget(
     "siliconflow:rerank:BAAI/bge-reranker-v2-m3", rpm=2000, tpm=500_000
@@ -43,8 +45,10 @@ def embed_texts(
     is_query: bool = False,
     *,
     budget: RateBudget | None = None,
+    batch_size: int | None = None,
+    workers: int | None = None,
 ) -> list[list[float]]:
-    """批量嵌入。is_query=True 时加 BGE 检索前缀。"""
+    """批量嵌入（可多线程并发多个 batch）。is_query=True 时加 BGE 检索前缀。"""
     if not texts:
         return []
     model = os.environ.get("SILICONFLOW_EMBED_MODEL", "BAAI/bge-m3")
@@ -54,13 +58,20 @@ def embed_texts(
         tpm=_DEFAULT_EMBED.tpm,
         retry_max=_DEFAULT_EMBED.retry_max,
     )
+    size = max(1, int(batch_size or _DEFAULT_BATCH))
+    n_workers = max(1, int(workers or _DEFAULT_WORKERS))
     client = _sf_client()
-    vectors: list[list[float]] = []
-    for start in range(0, len(texts), _BATCH):
-        batch = texts[start : start + _BATCH]
-        payload = [(QUERY_PREFIX + t) if is_query else t for t in batch]
 
-        def _call(payload: list[str] = payload) -> object:
+    spans: list[tuple[int, list[str]]] = []
+    for start in range(0, len(texts), size):
+        batch = texts[start : start + size]
+        payload = [(QUERY_PREFIX + t) if is_query else t for t in batch]
+        spans.append((start, payload))
+
+    out: list[list[float] | None] = [None] * len(texts)
+
+    def _one(start: int, payload: list[str]) -> tuple[int, list[list[float]]]:
+        def _call() -> object:
             limit.before_call()
             return client.embeddings.create(model=model, input=payload)
 
@@ -72,8 +83,24 @@ def embed_texts(
         part = [list(row.embedding) for row in ordered]
         if part and len(part[0]) != EMBED_DIM:
             raise RuntimeError(f"期望 {EMBED_DIM} 维，实际 {len(part[0])}")
-        vectors.extend(part)
-    return vectors
+        return start, part
+
+    if n_workers == 1 or len(spans) == 1:
+        for start, payload in spans:
+            s, part = _one(start, payload)
+            for i, vec in enumerate(part):
+                out[s + i] = vec
+    else:
+        with ThreadPoolExecutor(max_workers=min(n_workers, len(spans))) as pool:
+            futs = [pool.submit(_one, start, payload) for start, payload in spans]
+            for fut in as_completed(futs):
+                s, part = fut.result()
+                for i, vec in enumerate(part):
+                    out[s + i] = vec
+
+    if any(v is None for v in out):
+        raise RuntimeError("嵌入结果不完整")
+    return out  # type: ignore[return-value]
 
 
 def rerank(
@@ -115,7 +142,6 @@ def rerank(
             },
             timeout=60.0,
         )
-        # 429 必须在重试包装内 raise，httpx 默认不抛
         r.raise_for_status()
         body = r.json()
         tokens = (body.get("meta") or {}).get("tokens") or {}

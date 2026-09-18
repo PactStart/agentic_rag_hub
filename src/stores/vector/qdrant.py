@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 
+from loguru import logger
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import (
@@ -66,7 +67,11 @@ class QdrantVectorIndex:
                 return
             except (UnexpectedResponse, ConnectionError, TimeoutError, OSError) as exc:
                 last_error = exc
-                print(f"   Qdrant 暂不可用（第 {attempt}/5 次）：{exc.__class__.__name__}")
+                logger.warning(
+                    "Qdrant 暂不可用（第 {}/5 次）：{}",
+                    attempt,
+                    exc.__class__.__name__,
+                )
                 time.sleep(3)
         raise RuntimeError("无法连接 Qdrant，请先 docker compose up -d") from last_error
 
@@ -90,14 +95,23 @@ class QdrantVectorIndex:
             for chunk, emb in zip(chunks, embeddings, strict=True)
         ]
         if points:
-            self.client.upsert(collection_name=self.collection, points=points, wait=True)
+            self.client.upsert(collection_name=self.collection, points=points, wait=False)
 
     def delete_by_source(self, source: str) -> None:
+        self.delete_by_sources([source])
+
+    def delete_by_sources(self, sources: list[str]) -> None:
+        cleaned = [s for s in sources if s]
+        if not cleaned:
+            return
         self.client.delete(
             collection_name=self.collection,
             points_selector=FilterSelector(
                 filter=Filter(
-                    must=[FieldCondition(key="source", match=MatchValue(value=source))]
+                    should=[
+                        FieldCondition(key="source", match=MatchValue(value=s))
+                        for s in cleaned
+                    ]
                 )
             ),
         )

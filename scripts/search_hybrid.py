@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from loguru import logger
+
 from src.config import load_config
+from src.logging_config import setup_logging
 from src.pipeline_hybrid.hybrid import hybrid_search
 
 ROLE_MAP = {
@@ -20,17 +23,25 @@ ROLE_MAP = {
 }
 
 
-def print_group(title: str, hits: list[dict], score_key: str = "score") -> None:
-    print(f"\n=== {title} ===")
+def log_group(title: str, hits: list[dict], score_key: str = "score") -> None:
+    logger.info("=== {} ===", title)
     if not hits:
-        print("（空）")
+        logger.info("（空）")
         return
     for i, hit in enumerate(hits, start=1):
         preview = hit["text"].replace("\n", " ")[:100]
-        print(f"{i}. {score_key}={hit.get(score_key, 0):.4f}  [{hit.get('source')}] {preview}")
+        logger.info(
+            "{}. {}={:.4f}  [{}] {}",
+            i,
+            score_key,
+            hit.get(score_key, 0),
+            hit.get("source"),
+            preview,
+        )
 
 
 def main() -> None:
+    setup_logging()
     parser = argparse.ArgumentParser(description="混合检索")
     parser.add_argument("--search", default="试用期几个月")
     parser.add_argument("--role", default="hr", choices=list(ROLE_MAP))
@@ -40,7 +51,7 @@ def main() -> None:
     args = parser.parse_args()
     load_config()
     roles = ROLE_MAP[args.role]
-    print(f"查询：{args.search}  角色：{args.role} {roles}")
+    logger.info("查询：{}  角色：{} {}", args.search, args.role, roles)
     result = hybrid_search(
         args.search,
         roles=roles,
@@ -51,11 +62,11 @@ def main() -> None:
     dropped = result.get("dropped") or {}
     extra_bm25 = f"（过滤掉 {dropped['bm25']}）" if dropped.get("bm25") else ""
     extra_vec = f"（过滤掉 {dropped['vector']}）" if dropped.get("vector") else ""
-    print_group(f"BM25 召回{extra_bm25}", result["bm25"])
-    print_group(f"向量召回{extra_vec}", result["vector"])
-    print_group("RRF 融合", result["rrf"])
+    log_group(f"BM25 召回{extra_bm25}", result["bm25"])
+    log_group(f"向量召回{extra_vec}", result["vector"])
+    log_group("RRF 融合", result["rrf"])
     title = "精排后" if result.get("reranked") else "最终（RRF，未精排）"
-    print_group(title, result["final"])
+    log_group(title, result["final"])
 
 
 if __name__ == "__main__":

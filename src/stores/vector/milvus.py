@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+from loguru import logger
 from pymilvus import DataType, MilvusClient
 from pymilvus.exceptions import MilvusException
 
@@ -53,7 +54,11 @@ class MilvusVectorIndex:
                 return client
             except (MilvusException, ConnectionError, TimeoutError, OSError) as exc:
                 last_error = exc
-                print(f"   Milvus 暂不可用（第 {attempt}/5 次）：{exc.__class__.__name__}")
+                logger.warning(
+                    "Milvus 暂不可用（第 {}/5 次）：{}",
+                    attempt,
+                    exc.__class__.__name__,
+                )
                 time.sleep(3)
         raise RuntimeError(
             "无法连接 Milvus，请先按 README 启动 milvus-standalone"
@@ -89,45 +94,76 @@ class MilvusVectorIndex:
                 schema=schema,
                 index_params=index_params,
             )
-            print(f"   Milvus collection 已建：{self.collection}（dim={self.dim}, COSINE）")
+            logger.info(
+                "Milvus collection 已建：{}（dim={}, COSINE）",
+                self.collection,
+                self.dim,
+            )
 
         # 未 load 时 search 会空结果
         self.client.load_collection(self.collection)
 
-    def upsert(self, chunks: list[Chunk], embeddings: list[list[float]]) -> None:
+    def upsert(
+        self,
+        chunks: list[Chunk],
+        embeddings: list[list[float]],
+        *,
+        flush: bool = False,
+        batch_size: int = 1000,
+    ) -> None:
         if len(chunks) != len(embeddings):
             raise ValueError("chunks 与 embeddings 数量不一致")
         if not chunks:
             return
 
-        rows: list[dict] = []
-        for chunk, emb in zip(chunks, embeddings, strict=True):
-            if len(emb) != self.dim:
-                raise ValueError(f"向量维数 {len(emb)} != 配置 embed_dim={self.dim}")
-            text = chunk["text"] or ""
-            if len(text) > _TEXT_MAX:
-                text = text[:_TEXT_MAX]
-            cid = chunk["chunk_id"]
-            rows.append(
-                {
-                    "id": cid,
-                    "embedding": list(emb),
-                    "text": text,
-                    "source": chunk["source"],
-                    "chunk_id": cid,
-                    "section": chunk.get("section") or "",
-                    "content_hash": chunk.get("content_hash") or "",
-                    "page": chunk.get("page"),
-                    "acl": list(chunk.get("acl") or []),
-                }
-            )
-        self.client.upsert(collection_name=self.collection, data=rows)
+        size = max(1, int(batch_size))
+        for start in range(0, len(chunks), size):
+            part_chunks = chunks[start : start + size]
+            part_emb = embeddings[start : start + size]
+            rows: list[dict] = []
+            for chunk, emb in zip(part_chunks, part_emb, strict=True):
+                if len(emb) != self.dim:
+                    raise ValueError(f"向量维数 {len(emb)} != 配置 embed_dim={self.dim}")
+                text = chunk["text"] or ""
+                if len(text) > _TEXT_MAX:
+                    text = text[:_TEXT_MAX]
+                cid = chunk["chunk_id"]
+                rows.append(
+                    {
+                        "id": cid,
+                        "embedding": list(emb),
+                        "text": text,
+                        "source": chunk["source"],
+                        "chunk_id": cid,
+                        "section": chunk.get("section") or "",
+                        "content_hash": chunk.get("content_hash") or "",
+                        "page": chunk.get("page"),
+                        "acl": list(chunk.get("acl") or []),
+                    }
+                )
+            self.client.upsert(collection_name=self.collection, data=rows)
+        if flush:
+            self.flush()
+
+    def flush(self) -> None:
         self.client.flush(self.collection)
 
     def delete_by_source(self, source: str) -> None:
-        expr = f'source == "{_escape(source)}"'
-        self.client.delete(collection_name=self.collection, filter=expr)
-        self.client.flush(self.collection)
+        self.delete_by_sources([source], flush=False)
+
+    def delete_by_sources(self, sources: list[str], *, flush: bool = False) -> None:
+        cleaned = [s for s in sources if s]
+        if not cleaned:
+            return
+        # 表达式过长会失败；按批 in 过滤
+        step = 200
+        for i in range(0, len(cleaned), step):
+            part = cleaned[i : i + step]
+            quoted = ", ".join(f'"{_escape(s)}"' for s in part)
+            expr = f"source in [{quoted}]"
+            self.client.delete(collection_name=self.collection, filter=expr)
+        if flush:
+            self.flush()
 
     def search(self, vector: list[float], roles: list[str], top_k: int) -> list[Hit]:
         if not vector:

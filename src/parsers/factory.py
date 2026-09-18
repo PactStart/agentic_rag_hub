@@ -36,6 +36,10 @@ def build_parser(
 
     if name == "markdown":
         return MarkdownParser(default_acl=default_acl, chunker=chunker)
+    if name == "plain_text":
+        from src.parsers.plain_text import PlainTextParser
+
+        return PlainTextParser(default_acl=default_acl, chunker=chunker, **opts)
     if name == "docling":
         from src.parsers.docling import DoclingParser
 

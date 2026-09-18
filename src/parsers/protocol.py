@@ -16,6 +16,7 @@ class ParsedDoc(TypedDict):
     acl: list[str]
     page: NotRequired[int | None]
     doc_type: NotRequired[str]
+    title: NotRequired[str | None]
 
 
 class Parser(Protocol):

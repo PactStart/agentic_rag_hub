@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from loguru import logger
+
 from src.config import load_config
 from src.llm.siliconflow import embed_texts
 from src.pipeline_hybrid.rerank import rerank_hits
@@ -68,9 +70,9 @@ def hybrid_search(
             final = ranked[:top_k]
             reranked = True
         except Exception as exc:
-            print(
-                f"精排不可用（{exc.__class__.__name__}），本次只用 RRF。"
-                "可加 --skip-rerank。"
+            logger.warning(
+                "精排不可用（{}），本次只用 RRF。可加 --skip-rerank。",
+                exc.__class__.__name__,
             )
             final = fused[:top_k]
     else:

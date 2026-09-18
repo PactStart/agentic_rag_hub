@@ -29,6 +29,7 @@ dependencies = [
     "pyrate-limiter>=3.0",
     "tenacity>=8.0",
     "pymilvus>=2.5.0",
+    "loguru>=0.7.3",
 ]
 
 [project.optional-dependencies]

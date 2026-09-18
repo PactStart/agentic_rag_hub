@@ -30,10 +30,13 @@ parser:
 
 # 切片策略参数（由 routing.*.chunker / default.chunker / chunking.backend 选用）
 chunking:
-  backend: markdown_heading      # markdown_heading | pdf_layout | table_row | faq_pair
+  backend: markdown_heading      # markdown_heading | fixed_size | pdf_layout | …
   markdown_heading:
     chunk_size: 512
     chunk_overlap: 64
+  fixed_size:                    # CRUD 新闻轨见 config/rag.crud.yaml
+    chunk_size: 128
+    chunk_overlap: 0
 
 sparse:
   backend: elasticsearch          # memory_jsonl | elasticsearch | postgres_fts | qdrant_sparse

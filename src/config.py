@@ -28,6 +28,9 @@ def _expand(value: Any) -> Any:
 
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
+    from src.logging_config import setup_logging
+
+    setup_logging()
     load_dotenv(_ROOT / ".env")
     cfg_path = Path(path or os.environ.get("RAG_CONFIG", "config/rag.yaml"))
     if not cfg_path.is_absolute():

@@ -16,6 +16,14 @@ def build_chunker(cfg: dict, name: str | None = None) -> Chunker:
             chunk_size=opts.get("chunk_size", 512),
             chunk_overlap=opts.get("chunk_overlap", 64),
         )
+    if chosen == "fixed_size":
+        from src.parsers.chunking.fixed_size import FixedSizeChunker
+
+        opts = block.get("fixed_size") or {}
+        return FixedSizeChunker(
+            chunk_size=opts.get("chunk_size", 128),
+            chunk_overlap=opts.get("chunk_overlap", 0),
+        )
     if chosen in ("pdf_layout", "table_row", "faq_pair"):
         raise NotImplementedError(
             f"chunking.backend={chosen} 尚未实现。沙盒请用 markdown_heading。"

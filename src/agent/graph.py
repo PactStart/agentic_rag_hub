@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from langgraph.graph import END, StateGraph
+from loguru import logger
 
 from src.agent.nodes import generate_node, retrieve_node, rewrite_node
 from src.agent.state import RAGState
@@ -46,7 +47,7 @@ def invoke_rag(query: str, roles: list[str], use_rerank: bool = True) -> RAGStat
             Langfuse(public_key=public, secret_key=secret, host=host or None)
             config["callbacks"] = [CallbackHandler(public_key=public)]
         except Exception as exc:
-            print(f"Langfuse 未启用（{exc.__class__.__name__}）")
+            logger.warning("Langfuse 未启用（{}）", exc.__class__.__name__)
     return graph.invoke(
         {"query": query, "roles": roles, "use_rerank": use_rerank},
         config=config,

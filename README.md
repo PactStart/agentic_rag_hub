@@ -52,7 +52,7 @@
 
 
 沙盒语料：`data/sandbox/*.md`（假制度，带 frontmatter ACL）。  
-公开评测语料：`data/raw/CRUD_RAG/`（见 [TODO_CRUD_RAG.md](TODO_CRUD_RAG.md)，**勿与沙盒黄金集混用**）。
+公开评测语料：`data/corpus/80000_docs` + `data/corpus/crud_split/`（见 [docs/TODO_CRUD_RAG.md](docs/TODO_CRUD_RAG.md)，**勿与沙盒黄金集混用**）。
 
 ---
 
@@ -95,7 +95,7 @@ RAG 不是「把文档扔进向量库」，而是：
 
 业务只依赖协议，不写死引擎：
 
-- `IngestSource`：发现文件（当前 `local_glob`）
+- `IngestSource`：发现逻辑文档（`local_glob` 每文件一篇；`line_corpus` 每行一篇）
 - `Parser` + `Chunker`：由 `ingest.routing` 按扩展名选择
 - `SparseIndex` / `VectorIndex`：BM25 侧 / 向量侧
 - `IngestLedger`：增量账本（MySQL 或本地 JSON）
@@ -109,7 +109,7 @@ RAG 不是「把文档扔进向量库」，而是：
 ## 3. 端到端步骤
 
 ```
-① 解析        ingest.source 列文件 → Router 选 Parser
+① 解析        ingest.source 列逻辑文档 →（文件走 Router / 行语料直接切片）
 ② 切片        Chunker（如 markdown_heading）
 ③ 元数据      source / page / acl / content_hash / chunk_id
 ④ 双写        SparseIndex.upsert + VectorIndex.upsert + Ledger
@@ -173,7 +173,7 @@ RAG 不是「把文档扔进向量库」，而是：
 | ------- | ------------------------------------------------- |
 | 嵌入 / 重排 | 硅基 BGE-M3 / bge-reranker + `RateBudget`           |
 | 生成      | DeepSeek（OpenAI SDK）                              |
-| 语料源     | `ingest.source.type=local_glob`                   |
+| 语料源     | `local_glob`（沙盒）/ `line_corpus`（CRUD 一行一篇） |
 | 解析      | `markdown`（frontmatter ACL）                       |
 | 切片      | `markdown_heading`                                |
 | 稀疏索引    | `memory_jsonl`、`elasticsearch`（无 IK 时回退 standard） |
@@ -196,7 +196,9 @@ RAG 不是「把文档扔进向量库」，而是：
 | Chunker：pdf_layout / table_row / faq_pair  | 占位         |
 | Sparse：postgres_fts / qdrant_sparse        | 占位         |
 | Vector：pgvector                            | 占位         |
-| CRUD 四任务评估脚本                               | 见 TODO，未落地 |
+| CRUD 评测轨入库（line_corpus） | 已实现（`rag.crud.yaml` + `--limit` 控文档数） |
+| CRUD 四任务评估脚本                               | 见 TODO §4+，未落地 |
+
 | RAGAS / 消融脚本                               | 占位，请先黄金集   |
 
 
@@ -239,9 +241,11 @@ scripts/                     # ingest / search / eval / init_mysql / probe …
 alembic/                     # 账本迁移（勿删 versions）
 data/sandbox/                # 企业沙盒制度
 data/eval/golden.jsonl       # 黄金集
-data/raw/CRUD_RAG/           # 公开评测集（可选）
+data/corpus/80000_docs/      # CRUD 合集（一行一篇）
+data/corpus/crud_split/      # CRUD 评测 JSON
 docs/企业RAG复用教程.md       # 分阶段长教程
-TODO_CRUD_RAG.md             # CRUD 评测轨待办
+docs/TODO_CRUD_RAG.md
+config/rag.crud.yaml         # CRUD 评测轨配置（与沙盒隔离）
 ```
 
 ---
@@ -688,7 +692,7 @@ uv run python src/app.py
 
 | 文件                | 放什么                  |
 | ----------------- | -------------------- |
-| `.env`            | 密钥、DSN、URI           |
+| `.env`            | 密钥、DSN、URI、`LOG_LEVEL`  |
 | `config/rag.yaml` | 选哪个插件、切片大小、检索阈值、路由规则 |
 
 
@@ -781,13 +785,22 @@ uv run python scripts/build_graph.py  # 需 Neo4j 已起
 
 验收建议：≥20 条，覆盖 answer / refuse / forbidden。
 
-### 10.2 CRUD-RAG 评测轨（规划中）
+### 10.2 CRUD-RAG 评测轨（语料与入库已接线；四任务评估见 TODO §4+）
 
-公开基准含续写 / 摘要 / 纠错 / 多文档问答与 8 万新闻库。与企业 ACL 沙盒是**两条轨**：
+与企业 ACL 沙盒是**两条轨**（独立 index / collection / `ledger.tenant_id`）：
 
-- 独立索引 / collection（勿与 sandbox 共用）
-- 指标：ROUGE / BLEU 等（非黄金集规则）
-- 待办清单：[docs/TODO_CRUD_RAG.md](docs/TODO_CRUD_RAG.md)
+```bash
+# 探活
+uv run python scripts/probe.py --config config/rag.crud.yaml
+# 抽样入库：--limit = 文档篇数（一行一篇），不是文件数
+uv run python scripts/ingest.py --config config/rag.crud.yaml --limit 1000
+# 全量：去掉 --limit
+```
+
+- 配置：[`config/rag.crud.yaml`](config/rag.crud.yaml)（`line_corpus` → `data/corpus/80000_docs`；ES `crud_chunks`；向量 `crud_bge_m3`；租户 `crud`）
+- 加速：`ingest.batch`（分波 / 多线程解析 / 并发 embed / ES·Milvus 批量写）
+- 切片：`fixed_size` 128/0（对照官方）
+- 待办：[docs/TODO_CRUD_RAG.md](docs/TODO_CRUD_RAG.md)
 
 
 
@@ -863,7 +876,8 @@ A: 启动即报错，不会静默写错库——这是刻意行为。
 | 文档                                         | 用途                      |
 | ------------------------------------------ | ----------------------- |
 | [docs/企业RAG复用教程.md](docs/企业RAG复用教程.md)     | 分阶段原理与验收                |
-| [TODO_CRUD_RAG.md](TODO_CRUD_RAG.md)       | CRUD 评测轨清单              |
+| [docs/TODO_CRUD_RAG.md](docs/TODO_CRUD_RAG.md) | CRUD 评测轨清单 |
+
 | [sql/mysql/README.md](sql/mysql/README.md) | 账本 SQL 说明（以 Alembic 为准） |
 
 

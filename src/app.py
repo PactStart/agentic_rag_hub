@@ -26,6 +26,8 @@ import gradio as gr
 
 from src.agent.graph import invoke_rag
 from src.config import load_config
+from src.logging_config import setup_logging
+from loguru import logger
 
 ROLES = {
     "员工": ["employee"],
@@ -54,10 +56,12 @@ def chat(message: str, history: list, role_label: str) -> str:
 
 
 def main() -> None:
+    setup_logging()
     load_config()
     # 本机用 127.0.0.1，避免启动探活走 localhost→代理；局域网演示可改 0.0.0.0
     host = os.environ.get("GRADIO_SERVER_NAME", "127.0.0.1")
     port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
+    logger.info("启动 Gradio {}:{}", host, port)
     app = gr.ChatInterface(
         fn=chat,
         type="messages",

@@ -16,14 +16,16 @@ if str(ROOT) not in sys.path:
 
 from src.config import load_config, project_root
 from src.llm.siliconflow import embed_texts, rerank
+from src.logging_config import setup_logging
+from loguru import logger
 
 
 def _ok(name: str, detail: str) -> None:
-    print(f"  OK  {name}: {detail}")
+    logger.info("OK  {}: {}", name, detail)
 
 
 def _fail(name: str, detail: str) -> None:
-    print(f" FAIL {name}: {detail}")
+    logger.error("FAIL {}: {}", name, detail)
 
 
 def probe_siliconflow(cfg: dict) -> bool:
@@ -183,13 +185,28 @@ def probe_ledger(cfg: dict) -> bool:
 
 
 def main() -> None:
-    cfg = load_config()
+    import argparse
+
+    setup_logging()
+    parser = argparse.ArgumentParser(description="按配置探活硅基 + sparse/vector/ledger")
+    parser.add_argument("--config", default=None, help="默认 config/rag.yaml 或 RAG_CONFIG")
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
     sparse = os.environ.get("SPARSE_BACKEND") or (cfg.get("sparse") or {}).get("backend")
     vector = (cfg.get("vector") or {}).get("backend")
     ledger = os.environ.get("LEDGER_BACKEND") or (cfg.get("ledger") or {}).get("backend")
-    print(f"配置: {cfg.get('_config_path')}")
-    print(f"栈: sparse={sparse}  vector={vector}  ledger={ledger}  embed_dim={cfg.get('embed_dim')}")
-    print("探活…")
+    logger.info("配置: {}", cfg.get("_config_path"))
+    logger.info(
+        "栈: sparse={}  vector={}  ledger={}  embed_dim={}",
+        sparse,
+        vector,
+        ledger,
+        cfg.get("embed_dim"),
+    )
+    if (cfg.get("ledger") or {}).get("tenant_id"):
+        logger.info("ledger.tenant_id={}", (cfg.get("ledger") or {}).get("tenant_id"))
+    logger.info("探活…")
 
     results = [
         ("siliconflow", probe_siliconflow(cfg)),
@@ -199,8 +216,8 @@ def main() -> None:
     ]
     failed = [name for name, ok in results if not ok]
     if failed:
-        raise SystemExit(f"探活失败: {', '.join(failed)}。请对照 README §7 起服务或改 rag.yaml。")
-    print("探活成功（当前 yaml 用到的组件均可连）")
+        raise SystemExit(f"探活失败: {', '.join(failed)}。请对照 README §7 起服务或改配置。")
+    logger.info("探活成功（当前 yaml 用到的组件均可连）")
 
 
 if __name__ == "__main__":

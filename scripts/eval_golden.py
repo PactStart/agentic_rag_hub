@@ -12,9 +12,11 @@ if str(ROOT) not in sys.path:
 
 from src.config import load_config
 from src.eval.golden import run_golden
+from src.logging_config import setup_logging
 
 
 def main() -> None:
+    setup_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval", type=Path, default=ROOT / "data/eval/golden.jsonl")
     args = parser.parse_args()

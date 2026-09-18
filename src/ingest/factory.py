@@ -3,15 +3,18 @@
 必填结构（无旧字段回退）::
 
     ingest:
-      source: {type: local_glob, glob: ...}   # 或 globs: [...]
+      source:
+        type: local_glob | line_corpus
+        glob: ...                 # local_glob
+        dir: data/corpus/80000_docs  # line_corpus
       routing: [{match: {ext: [...]}, parser: ..., chunker: ...}, ...]
-      default: {parser: ..., chunker: ...}    # 未命中 routing 时使用
+      default: {parser: ..., chunker: ...}
 """
 
 from __future__ import annotations
 
 from src.ingest.router import ParserRouter, RouteRule
-from src.ingest.source import IngestSource, LocalGlobSource
+from src.ingest.source import IngestSource, LineCorpusSource, LocalGlobSource
 
 
 def build_source(cfg: dict) -> IngestSource:
@@ -28,7 +31,18 @@ def build_source(cfg: dict) -> IngestSource:
             raise ValueError("ingest.source 需配置 glob（字符串）或 globs（列表）")
         return LocalGlobSource(patterns)
 
-    raise ValueError(f"未知 ingest.source.type: {stype}（目前仅支持 local_glob）")
+    if stype == "line_corpus":
+        directory = source.get("dir") or source.get("path") or source.get("directory")
+        if not directory:
+            raise ValueError("ingest.source.type=line_corpus 时需配置 dir")
+        return LineCorpusSource(
+            str(directory),
+            encoding=str(source.get("encoding") or "utf-8"),
+        )
+
+    raise ValueError(
+        f"未知 ingest.source.type: {stype}（支持 local_glob | line_corpus）"
+    )
 
 
 def build_router(cfg: dict) -> ParserRouter:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from loguru import logger
+
 from src.agent.graph import invoke_rag
 from src.config import project_root
 
@@ -64,5 +66,5 @@ def run_golden(path: Path | None = None) -> dict:
     if not report["failed"]:
         lines.append("（本轮无失败）")
     bad.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"黄金集 {passed}/{len(rows)} 通过，报告：{out_path}")
+    logger.info("黄金集 {}/{} 通过，报告：{}", passed, len(rows), out_path)
     return report
