@@ -24,6 +24,7 @@ data/corpus/*
 .ruff_cache/
 docker/milvus/
 results/
+src/eval/crud/quest_cache/*.json
 
 
 # Other

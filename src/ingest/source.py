@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from loguru import logger
+
 from src.config import project_root
 
 
@@ -27,7 +29,8 @@ class IngestDoc:
 
 
 class IngestSource:
-    def list_docs(self) -> list[IngestDoc]:
+    def list_docs(self, *, after: str | None = None) -> list[IngestDoc]:
+        """``after`` 为已完成的 source id 时，只返回排在它后面的文档（不含自身）。"""
         raise NotImplementedError
 
 
@@ -41,7 +44,7 @@ class LocalGlobSource(IngestSource):
         if not self.patterns:
             raise ValueError("LocalGlobSource 至少需要一个 glob 模式")
 
-    def list_docs(self) -> list[IngestDoc]:
+    def list_docs(self, *, after: str | None = None) -> list[IngestDoc]:
         root = project_root()
         found: set[Path] = set()
         for pattern in self.patterns:
@@ -49,10 +52,13 @@ class LocalGlobSource(IngestSource):
                 if path.is_file():
                     found.add(path.resolve())
         # source 占位；真正 source 以 Parser.parse 为准
-        return [
+        docs = [
             IngestDoc(source=path.name, path=path)
             for path in sorted(found)
         ]
+        if after:
+            docs = [d for d in docs if d.source > after]
+        return docs
 
 
 class LineCorpusSource(IngestSource):
@@ -67,7 +73,7 @@ class LineCorpusSource(IngestSource):
             raise ValueError("line_corpus 需配置 ingest.source.dir")
         self.encoding = encoding or "utf-8"
 
-    def list_docs(self) -> list[IngestDoc]:
+    def list_docs(self, *, after: str | None = None) -> list[IngestDoc]:
         root = project_root()
         dir_path = Path(self.directory)
         if not dir_path.is_absolute():
@@ -75,18 +81,34 @@ class LineCorpusSource(IngestSource):
         if not dir_path.is_dir():
             raise FileNotFoundError(f"line_corpus 目录不存在：{dir_path}")
 
+        after_name = ""
+        if after:
+            if "__" not in after:
+                raise ValueError(
+                    "line_corpus 的 --after 须为 {文件名}__{行号六位}，"
+                    f"例如 documents_dup_part_14_part_3__000985，收到：{after}"
+                )
+            after_name = after.rsplit("__", 1)[0]
+
         docs: list[IngestDoc] = []
         files = sorted(p for p in dir_path.iterdir() if p.is_file())
         if not files:
             raise FileNotFoundError(f"line_corpus 目录下没有文件：{dir_path}")
 
+        skipped_files = 0
         for path in files:
+            # 文件名排序与 source 前缀一致；更早的合集整文件不读
+            if after_name and path.name < after_name:
+                skipped_files += 1
+                continue
             with path.open(encoding=self.encoding, errors="replace") as fh:
                 for i, line in enumerate(fh, start=1):
                     text = line.strip()
                     if not text:
                         continue
                     doc_id = f"{path.name}__{i:06d}"
+                    if after and doc_id <= after:
+                        continue
                     docs.append(
                         IngestDoc(
                             source=doc_id,
@@ -94,4 +116,11 @@ class LineCorpusSource(IngestSource):
                             text=text,
                         )
                     )
+        if after:
+            logger.info(
+                "续跑 --after {}：跳过更早文件 {} 个，待处理 {} 篇",
+                after,
+                skipped_files,
+                len(docs),
+            )
         return docs

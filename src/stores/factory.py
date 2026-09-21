@@ -27,7 +27,13 @@ def build_sparse(cfg: dict) -> SparseIndex:
     if name == "postgres_fts":
         from src.stores.sparse.postgres_fts import PostgresFtsIndex
 
-        return PostgresFtsIndex(**(block.get("postgres_fts") or {}))
+        p = block.get("postgres_fts") or {}
+        return PostgresFtsIndex(
+            dsn=p.get("dsn") or os.environ.get("POSTGRES_DSN") or "",
+            table=p.get("table")
+            or os.environ.get("POSTGRES_FTS_TABLE")
+            or "rag_chunks",
+        )
     if name == "qdrant_sparse":
         from src.stores.sparse.qdrant_sparse import QdrantSparseIndex
 
@@ -64,5 +70,12 @@ def build_vector(cfg: dict) -> VectorIndex:
     if name == "pgvector":
         from src.stores.vector.pgvector import PgVectorIndex
 
-        return PgVectorIndex(**(block.get("pgvector") or {}), dim=dim)
+        p = block.get("pgvector") or {}
+        return PgVectorIndex(
+            dsn=p.get("dsn") or os.environ.get("POSTGRES_DSN") or "",
+            table=p.get("table")
+            or os.environ.get("PGVECTOR_TABLE")
+            or "rag_embeddings",
+            dim=dim,
+        )
     raise ValueError(f"未知 vector.backend: {name}")

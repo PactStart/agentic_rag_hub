@@ -30,9 +30,19 @@ def main() -> None:
         default=None,
         help="只处理前 N 篇文档（line_corpus 下一行一篇；不会删除账本中其它文档）",
     )
+    parser.add_argument(
+        "--after",
+        default=None,
+        help="从该 source 的下一篇继续（不含自身）。例：documents_dup_part_14_part_3__000985",
+    )
     args = parser.parse_args()
-    logger.info("开始入库 config={} limit={}", args.config or "(default)", args.limit)
-    summary = run_ingest(config_path=args.config, limit=args.limit)
+    logger.info(
+        "开始入库 config={} limit={} after={}",
+        args.config or "(default)",
+        args.limit,
+        args.after,
+    )
+    summary = run_ingest(config_path=args.config, limit=args.limit, after=args.after)
     logger.info(
         "结束：added={} updated={} skipped={} failed={} embedded={}",
         len(summary.get("added") or []),

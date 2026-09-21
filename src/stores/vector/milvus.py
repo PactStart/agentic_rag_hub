@@ -42,7 +42,8 @@ class MilvusVectorIndex:
         self.uri = uri or "http://127.0.0.1:19530"
         self.collection = collection or "enterprise_rag"
         self.dim = int(dim)
-        self.client = self._connect(token=token or "")
+        self._token = token or ""
+        self.client = self._connect(token=self._token)
         self._ensure_collection()
 
     def _connect(self, *, token: str) -> MilvusClient:
@@ -138,12 +139,34 @@ class MilvusVectorIndex:
                         "section": chunk.get("section") or "",
                         "content_hash": chunk.get("content_hash") or "",
                         "page": chunk.get("page"),
-                        "acl": list(chunk.get("acl") or []),
-                    }
-                )
-            self.client.upsert(collection_name=self.collection, data=rows)
+                    "acl": list(chunk.get("acl") or []),
+                }
+            )
+            self._upsert_with_retry(rows)
         if flush:
             self.flush()
+
+    def _upsert_with_retry(self, rows: list[dict]) -> None:
+        """DataNode 重启时 gRPC 会断；upsert 按主键覆盖，重试不会插重。"""
+        last: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                self.client.upsert(collection_name=self.collection, data=rows)
+                return
+            except (MilvusException, ConnectionError, OSError) as exc:
+                last = exc
+                logger.warning(
+                    "Milvus upsert 失败（第 {}/3 次，{} 行）：{}",
+                    attempt,
+                    len(rows),
+                    exc.__class__.__name__,
+                )
+                time.sleep(5 * attempt)
+                try:
+                    self.client = self._connect(token=self._token)
+                except Exception as reconnect_exc:  # noqa: BLE001
+                    logger.warning("Milvus 重连失败：{}", reconnect_exc)
+        raise RuntimeError("Milvus upsert 重试后仍失败") from last
 
     def flush(self) -> None:
         self.client.flush(self.collection)

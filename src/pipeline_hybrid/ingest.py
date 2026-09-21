@@ -75,14 +75,20 @@ def _delete_sources(sparse: Any, vector: Any, sources: list[str]) -> None:
             vector.delete_by_source(s)
 
 
-def _finish_write(sparse: Any, vector: Any) -> None:
+def _finish_write(sparse: Any, vector: Any, *, flush_vector: bool = False) -> None:
     if hasattr(sparse, "refresh_index"):
         sparse.refresh_index()
-    if hasattr(vector, "flush"):
+    # 每波 flush 会触发 compaction；DataNode 一重启就会 node id 对不上。只在结束时 flush。
+    if flush_vector and hasattr(vector, "flush"):
         vector.flush()
 
 
-def run_ingest(config_path: str | None = None, *, limit: int | None = None) -> dict:
+def run_ingest(
+    config_path: str | None = None,
+    *,
+    limit: int | None = None,
+    after: str | None = None,
+) -> dict:
     cfg = load_config(config_path)
     source = build_source(cfg)
     router = build_router(cfg)
@@ -96,10 +102,11 @@ def run_ingest(config_path: str | None = None, *, limit: int | None = None) -> d
     text_chunker = build_chunker(cfg, name=default_chunker_name)
     bc = _batch_cfg(cfg)
 
-    docs = source.list_docs()
+    docs = source.list_docs(after=after or None)
     if not docs:
         raise FileNotFoundError(
             "没有发现待入库文档，请检查 ingest.source（glob / dir）"
+            + (f" 或 --after {after} 之后是否还有文档" if after else "")
         )
     if limit is not None:
         if limit <= 0:
@@ -241,7 +248,7 @@ def run_ingest(config_path: str | None = None, *, limit: int | None = None) -> d
             f_v = pool.submit(_write_vector)
             f_s.result()
             f_v.result()
-        _finish_write(sparse, vector)
+        _finish_write(sparse, vector, flush_vector=False)
 
         logger.info("  写账本 {} …", len(pending))
         for source_id, meta in pending.items():
@@ -280,7 +287,8 @@ def run_ingest(config_path: str | None = None, *, limit: int | None = None) -> d
                     updated.remove(source_id)
 
     deleted: list[str] = []
-    if limit is None:
+    # --limit / --after 都不是全量扫描，不能把没见到的旧文档当成已删除
+    if limit is None and not after:
         gone = [sid for sid in active if sid not in current_sources]
         logger.info("全量模式：删除消失文档 {} …", len(gone))
         for source_id in gone:
@@ -299,7 +307,10 @@ def run_ingest(config_path: str | None = None, *, limit: int | None = None) -> d
                 )
                 failed.append(source_id)
         if gone:
-            _finish_write(sparse, vector)
+            _finish_write(sparse, vector, flush_vector=False)
+
+    logger.info("入库结束，刷新 Milvus segment …")
+    _finish_write(sparse, vector, flush_vector=True)
 
     summary = {
         "added": added,

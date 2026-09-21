@@ -91,7 +91,18 @@ def probe_sparse(cfg: dict) -> bool:
             )
             return True
 
-        if name in ("postgres_fts", "qdrant_sparse"):
+        if name == "postgres_fts":
+            from src.stores.factory import build_sparse
+
+            idx = build_sparse(cfg)
+            # 触发建表 / 连库
+            _ = idx.search("探活", ["all"], top_k=1)
+            p = block.get("postgres_fts") or {}
+            table = p.get("table") or os.environ.get("POSTGRES_FTS_TABLE") or "rag_chunks"
+            _ok(label, f"table={table}（jieba+tsvector simple）")
+            return True
+
+        if name == "qdrant_sparse":
             _fail(label, "插件未实现（见 README 局限）")
             return False
 
@@ -143,8 +154,15 @@ def probe_vector(cfg: dict) -> bool:
             return True
 
         if name == "pgvector":
-            _fail(label, "插件未实现（见 README 局限）")
-            return False
+            from src.stores.factory import build_vector
+
+            idx = build_vector(cfg)
+            dim = int(cfg.get("embed_dim") or 1024)
+            _ = idx.search([0.0] * dim, ["all"], top_k=1)
+            p = block.get("pgvector") or {}
+            table = p.get("table") or os.environ.get("PGVECTOR_TABLE") or "rag_embeddings"
+            _ok(label, f"table={table} dim={dim}（extension vector）")
+            return True
 
         _fail(label, f"未知 vector.backend: {name}")
         return False
@@ -216,7 +234,7 @@ def main() -> None:
     ]
     failed = [name for name, ok in results if not ok]
     if failed:
-        raise SystemExit(f"探活失败: {', '.join(failed)}。请对照 README §7 起服务或改配置。")
+        raise SystemExit(f"探活失败: {', '.join(failed)}。请对照 README §10 起服务或改配置。")
     logger.info("探活成功（当前 yaml 用到的组件均可连）")
 
 

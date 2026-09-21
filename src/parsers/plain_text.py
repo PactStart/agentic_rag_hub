@@ -38,7 +38,6 @@ class PlainTextParser:
             source = str(path)
         else:
             source = path.stem
-        title = body.splitlines()[0][:120] if body else None
         return {
             "source": source,
             "markdown": body,
@@ -47,7 +46,6 @@ class PlainTextParser:
             "acl": list(self.default_acl),
             "page": None,
             "doc_type": "plain_text",
-            "title": title,
         }
 
     def chunk(self, doc: ParsedDoc) -> list[Chunk]:

@@ -3,7 +3,8 @@
 #
 # 语料：data/corpus/80000_docs 下每个文件一行一篇新闻。
 # 抽样试跑：uv run python scripts/ingest.py --config config/rag.crud.yaml --limit 1000
-# 全量：去掉 --limit
+# 续跑：--after {账本里最后一篇 source}（不含该篇；更早的合集文件不读）
+# 全量：去掉 --limit / --after
 
 ingest:
   source:
@@ -15,11 +16,11 @@ ingest:
     chunker: fixed_size
   # 入库加速（可按机器/配额调大）
   batch:
-    wave_size: 500            # 每波文档数；越大吞吐越高、占内存越多
+    wave_size: 100            # 每波文档数；standalone 内存紧时保持较小
     parse_workers: 8          # 解析/切片线程
     embed_batch: 64           # 单次 embed API 条数
     embed_workers: 4          # 并发 embed 请求数（受 RateBudget 约束）
-    milvus_bulk: 1000         # Milvus 单次 upsert 行数
+    milvus_bulk: 50           # 单次 upsert 行数；Docker 内存紧时保持小，防 DataNode OOM
 
 parser:
   plain_text: {}
@@ -68,10 +69,13 @@ crud_eval:
   recall_k: 16
   top_k: 8
   use_rerank: true
-  refuse: false
+  refuse: false                 # 勿套企业拒答 prompt；用 src/eval/crud/prompts/
   temperature: 0.1
+  roles: ["all"]                # ACL 全可见，避免误伤指标
   split_json: data/corpus/crud_split/split_merged.json
   corpus_dir: data/corpus/80000_docs
+  # 生成：DeepSeek（DEEPSEEK_*）；嵌入/重排仍硅基
+  # CLI: uv run python scripts/eval_crud.py --config config/rag.crud.yaml --task qa --limit 50
   note: >
     官方向量多为 bge-base-zh + Milvus；本轨用硅基 BGE-M3（1024 维）。
     分数勿与论文表直接横比。line_corpus：目录内每个文件按行拆成文档再 fixed_size 切片。
